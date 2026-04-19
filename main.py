@@ -12,6 +12,8 @@ import struct
 import sys
 import os
 import concurrent.futures
+import multiprocessing
+from collections import defaultdict
 
 # -----------------------------------------------------------------------------
 # Core Music Math
@@ -82,6 +84,153 @@ def noise_gen(t, key, s, e, sample_rate, fix_pitch):
     timbre = 0.5 + 0.5 * ((t % period) / period)
     return random.random() * vol * timbre
 
+def square_gen(t, key, s, e, sample_rate, fix_pitch):
+    """
+    The "Square" instrument (8-bit style square wave, like retro game music).
+    """
+    if fix_pitch:
+        freq = get_freq(key)
+    else:
+        freq = get_freq(88.0 - key - 3.75)
+    
+    if freq <= 0: return 0
+    
+    vol = max(0.0, 1.0 - (t - s) / (e - s)) ** 0.5
+    
+    if fix_pitch:
+        phase = 2.0 * math.pi * t * freq / sample_rate
+    else:
+        phase = (((t * freq) % sample_rate) / sample_rate) * math.pi * 2.0
+    
+    # Square wave: only positive or negative
+    square_val = 1.0 if math.sin(phase) >= 0 else -1.0
+    return square_val * vol
+
+def triangle_gen(t, key, s, e, sample_rate, fix_pitch):
+    """
+    The "Triangle" instrument (softer than square, good for bass or flute-like sounds).
+    """
+    if fix_pitch:
+        freq = get_freq(key)
+    else:
+        freq = get_freq(88.0 - key - 3.75)
+    
+    if freq <= 0: return 0
+    
+    vol = max(0.0, 1.0 - (t - s) / (e - s)) ** 0.75
+    
+    if fix_pitch:
+        phase = 2.0 * math.pi * t * freq / sample_rate
+    else:
+        phase = (((t * freq) % sample_rate) / sample_rate) * math.pi * 2.0
+    
+    # Triangle wave using arcsin of sin
+    triangle_val = (2.0 / math.pi) * math.asin(math.sin(phase))
+    return triangle_val * vol
+
+def organ_gen(t, key, s, e, sample_rate, fix_pitch):
+    """
+    The "Organ" instrument (adds harmonics for a richer, sustained sound).
+    """
+    if fix_pitch:
+        freq = get_freq(key)
+    else:
+        freq = get_freq(88.0 - key - 3.75)
+    
+    if freq <= 0: return 0
+    
+    # Organ has slow attack and long sustain
+    progress = (t - s) / (e - s) if e > s else 0
+    attack = min(1.0, progress * 10.0)  # Quick attack
+    release = max(0.0, 1.0 - max(0.0, progress - 0.7) / 0.3)  # Late release
+    vol = min(attack, release) ** 0.5
+    
+    # Add harmonics (octave + fifth + octave)
+    result = 0.0
+    result += math.sin(2.0 * math.pi * t * freq / sample_rate) * 0.5
+    result += math.sin(2.0 * math.pi * t * freq * 1.5 / sample_rate) * 0.25
+    result += math.sin(2.0 * math.pi * t * freq * 2.0 / sample_rate) * 0.15
+    result += math.sin(2.0 * math.pi * t * freq * 3.0 / sample_rate) * 0.1
+    
+    return result * vol
+
+def bass_gen(t, key, s, e, sample_rate, fix_pitch):
+    """
+    The "Bass" instrument (low frequency with punchy envelope).
+    """
+    if fix_pitch:
+        freq = get_freq(key)
+    else:
+        freq = get_freq(88.0 - key - 3.75)
+    
+    if freq <= 0: return 0
+    
+    # Punchy envelope - quick attack, medium decay
+    progress = (t - s) / (e - s) if e > s else 0
+    vol = max(0.0, 1.0 - progress) ** 1.5
+    
+    # Sawtooth-like bass with some harmonics
+    period = sample_rate / freq
+    if period <= 0: return 0
+    
+    saw_val = 2.0 * ((t % period) / period - 0.5)
+    result = saw_val * 0.7
+    result += math.sin(2.0 * math.pi * t * freq * 2.0 / sample_rate) * 0.2
+    result += math.sin(2.0 * math.pi * t * freq * 3.0 / sample_rate) * 0.1
+    
+    return result * vol
+
+def pad_gen(t, key, s, e, sample_rate, fix_pitch):
+    """
+    The "Pad" instrument (soft, atmospheric background sound).
+    """
+    if fix_pitch:
+        freq = get_freq(key)
+    else:
+        freq = get_freq(88.0 - key - 3.75)
+    
+    if freq <= 0: return 0
+    
+    # Very slow attack and release for pad sound
+    progress = (t - s) / (e - s) if e > s else 0
+    attack = min(1.0, progress * 3.0)  # Slow attack
+    release = max(0.0, 1.0 - max(0.0, progress - 0.5) / 0.5)
+    vol = min(attack, release) * 0.3  # Quieter for background
+    
+    # Detuned dual oscillators for rich pad sound
+    result = 0.0
+    result += math.sin(2.0 * math.pi * t * freq / sample_rate) * 0.5
+    result += math.sin(2.0 * math.pi * t * freq * 1.005 / sample_rate) * 0.3  # Slightly detuned
+    result += math.sin(2.0 * math.pi * t * freq * 2.0 / sample_rate) * 0.15
+    
+    return result * vol
+
+def arp_gen(t, key, s, e, sample_rate, fix_pitch):
+    """
+    The "Arp" instrument (plucky, percussive sound for arpeggios).
+    """
+    if fix_pitch:
+        freq = get_freq(key)
+    else:
+        freq = get_freq(88.0 - key - 3.75)
+    
+    if freq <= 0: return 0
+    
+    # Very punchy - quick attack, fast decay
+    progress = (t - s) / (e - s) if e > s else 0
+    vol = max(0.0, 1.0 - progress * 3.0) ** 2.0
+    
+    period = sample_rate / freq
+    if period <= 0: return 0
+    
+    # Bright, metallic sound
+    saw_val = 2.0 * ((t % period) / period - 0.5)
+    result = saw_val * 0.6
+    result += math.sin(2.0 * math.pi * t * freq * 3.0 / sample_rate) * 0.2
+    result += math.sin(2.0 * math.pi * t * freq * 4.0 / sample_rate) * 0.1
+    
+    return result * vol
+
 # -----------------------------------------------------------------------------
 # Classes
 # -----------------------------------------------------------------------------
@@ -112,12 +261,70 @@ class Song:
         self.channels = []
 
 # -----------------------------------------------------------------------------
+# Style Presets
+# -----------------------------------------------------------------------------
+
+STYLE_PRESETS = {
+    'retro': {
+        'instruments': ['Square', 'Triangle', 'Noise'],
+        'bpm_range': (100, 140),
+        'melody_complexity': 0.8,
+        'drum_intensity': 0.9
+    },
+    'ambient': {
+        'instruments': ['Pad', 'SinWave', 'Organ'],
+        'bpm_range': (60, 80),
+        'melody_complexity': 0.3,
+        'drum_intensity': 0.2
+    },
+    'techno': {
+        'instruments': ['Square', 'Bass', 'Noise'],
+        'bpm_range': (120, 160),
+        'melody_complexity': 0.9,
+        'drum_intensity': 1.0
+    },
+    'orchestral': {
+        'instruments': ['SinWave', 'Organ', 'Pad'],
+        'bpm_range': (70, 100),
+        'melody_complexity': 0.6,
+        'drum_intensity': 0.4
+    },
+    'experimental': {
+        'instruments': ['Arp', 'Bass', 'Noise', 'Pad'],
+        'bpm_range': (80, 120),
+        'melody_complexity': 1.0,
+        'drum_intensity': 0.7
+    },
+    'classic': {
+        'instruments': ['Piano', 'SinWave', 'Noise'],
+        'bpm_range': (70, 90),
+        'melody_complexity': 0.5,
+        'drum_intensity': 0.5
+    }
+}
+
+# -----------------------------------------------------------------------------
 # Algorithmic Composition
 # -----------------------------------------------------------------------------
 
-def compose_song(bars, seed):
+def get_instrument_by_name(name):
+    """Get instrument generator function by name."""
+    instrument_map = {
+        'Piano': piano_gen,
+        'Noise': noise_gen,
+        'SinWave': sinwave_gen,
+        'Square': square_gen,
+        'Triangle': triangle_gen,
+        'Organ': organ_gen,
+        'Bass': bass_gen,
+        'Pad': pad_gen,
+        'Arp': arp_gen
+    }
+    return instrument_map.get(name, piano_gen)
+
+def compose_song(bars, seed, style='classic'):
     """
-    Composes a song algorithmically based on the provided random seed.
+    Composes a song algorithmically based on the provided random seed and style.
     Replicates the random sequence from the original JavaScript.
     """
     if seed is not None:
@@ -125,14 +332,21 @@ def compose_song(bars, seed):
         
     song = Song(bars)
     
-    # Setup Instruments
-    piano_inst = Instrument('Piano', piano_gen)
-    noise_inst = Instrument('Noise', noise_gen)
-    sinwave_inst = Instrument('SinWave', sinwave_gen)
+    # Get style configuration
+    style_config = STYLE_PRESETS.get(style, STYLE_PRESETS['classic'])
+    instruments = style_config['instruments']
+    melody_complexity = style_config['melody_complexity']
+    drum_intensity = style_config['drum_intensity']
     
-    song.channels.append(Channel(0, piano_inst))
-    song.channels.append(Channel(1, noise_inst))
-    song.channels.append(Channel(2, sinwave_inst))
+    # Setup Instruments based on style
+    for i, inst_name in enumerate(instruments):
+        instrument = Instrument(inst_name, get_instrument_by_name(inst_name))
+        song.channels.append(Channel(i, instrument))
+    
+    # Add extra channels if needed (up to 5 total)
+    while len(song.channels) < 5:
+        fallback_inst = Instrument('Piano', piano_gen)
+        song.channels.append(Channel(len(song.channels), fallback_inst))
 
     # The original JS generates exactly 4 bars per sequence.
     # We will generate music in 4-bar blocks to satisfy the requested length.
@@ -147,34 +361,50 @@ def compose_song(bars, seed):
         s = 4.0
         vv = random.randint(0, 1) + 3
 
+        # Variation: different scale patterns based on block
+        scale_offset = random.choice([0, 2, 4, 5, 7, 9, 11])  # Major scale intervals
+        
         ch0_notes = []
         ch1_notes = []
         ch2_notes = []
+        
+        # Additional channels for more variation
+        ch3_notes = []
+        ch4_notes = []
 
-        # 1. Generate Drum Beat (First 2 bars)
+        # 1. Generate Drum Beat (First 2 bars) with style-based intensity
+        drum_count = int(10 * drum_intensity)
         for i in range(0, 8, 2):
             offset = base_beat + float(i)
-            ch1_notes.append(Note(1, 49, offset, offset + 0.125))
-            ch1_notes.append(Note(1, 49, offset + 0.25, offset + 0.3125))
-            ch1_notes.append(Note(1, 49, offset + 0.5, offset + 0.75))
-            ch1_notes.append(Note(1, 49, offset + 0.75, offset + 0.8125))
-            ch1_notes.append(Note(1, 49, offset + 0.875, offset + 1.0))
-            ch1_notes.append(Note(1, 49, offset + 1.125, offset + 1.25))
-            ch1_notes.append(Note(1, 49, offset + 1.25, offset + 1.3125))
-            ch1_notes.append(Note(1, 49, offset + 1.5, offset + 1.75))
-            ch1_notes.append(Note(1, 49, offset + 1.75, offset + 1.8125))
-            ch1_notes.append(Note(1, 49, offset + 1.875, offset + 1.9375))
+            # Kick drum pattern
+            ch1_notes.append(Note(1, 49, offset, offset + 0.125, drum_intensity))
+            ch1_notes.append(Note(1, 49, offset + 0.25, offset + 0.3125, drum_intensity))
+            ch1_notes.append(Note(1, 49, offset + 0.5, offset + 0.75, drum_intensity))
+            ch1_notes.append(Note(1, 49, offset + 0.75, offset + 0.8125, drum_intensity))
+            ch1_notes.append(Note(1, 49, offset + 0.875, offset + 1.0, drum_intensity))
+            ch1_notes.append(Note(1, 49, offset + 1.125, offset + 1.25, drum_intensity))
+            ch1_notes.append(Note(1, 49, offset + 1.25, offset + 1.3125, drum_intensity))
+            ch1_notes.append(Note(1, 49, offset + 1.5, offset + 1.75, drum_intensity))
+            ch1_notes.append(Note(1, 49, offset + 1.75, offset + 1.8125, drum_intensity))
+            ch1_notes.append(Note(1, 49, offset + 1.875, offset + 1.9375, drum_intensity))
+            
+            # Hi-hat patterns (more active with higher intensity)
+            if drum_intensity > 0.5:
+                for hat_beat in [0.125, 0.375, 0.625, 0.875, 1.125, 1.375, 1.625, 1.875]:
+                    ch1_notes.append(Note(1, 49 - 24, offset + hat_beat, offset + hat_beat + 0.0625, drum_intensity * 0.5))
 
-        # 2. Random Melody Base
-        for i in range(int(s * 2)):
+        # 2. Random Melody Base with style-based complexity
+        melody_count = int(s * 2 * melody_complexity)
+        for i in range(melody_count):
             delay = 0.0
             if random.random() < 0.4: delay = int(random.random() * 3) * 0.5
             if random.random() < 0.2: delay = int(random.random() * 3) * 0.25
 
-            if random.random() > 0.25:
+            if random.random() > (1.0 - melody_complexity * 0.5):
                 r_val = int(random.random()**2 * 3) * 2 - 2
                 vv_sub = vv if random.random() < 0.2 else 0
-                key = 49 - 12 + int(random.random() * 3) * 12 - 12 + v + 0 * r_val - vv_sub
+                # Use scale-aware note selection for better musicality
+                key = 49 - 12 + int(random.random() * 3) * 12 - 12 + v + scale_offset + r_val - vv_sub
                 
                 note_start = base_beat + (i / s) + (delay / s)
                 note_end = base_beat + (i / s) + (1.0 / s) + (delay / s)
@@ -233,9 +463,37 @@ def compose_song(bars, seed):
         # 8. Cymbal crash at the start of the 2nd half
         ch1_notes.append(Note(1, 49 - 12, base_beat + 8.0, base_beat + 10.0, 0.5))
 
+        # 9. Additional variation: Arpeggio patterns for higher channels
+        if len(song.channels) > 3:
+            arp_patterns = [
+                [0, 4, 7, 12],  # Major arpeggio
+                [0, 3, 7, 12],  # Minor arpeggio
+                [0, 4, 8, 12],  # Augmented arpeggio
+                [0, 3, 6, 12]   # Diminished arpeggio
+            ]
+            pattern = random.choice(arp_patterns)
+            root = 49 + v
+            for beat_offset in [0, 2, 4, 6]:
+                for interval in pattern:
+                    note_time = base_beat + beat_offset + (pattern.index(interval) * 0.25)
+                    if note_time < base_beat + 8:
+                        ch3_notes.append(Note(3, root + interval, note_time, note_time + 0.2, 0.3))
+
+        # 10. Pad/Atmosphere for extra channels
+        if len(song.channels) > 4:
+            pad_duration = 4.0
+            for beat_offset in [0, 4, 8, 12]:
+                pad_root = 49 + v - 12
+                ch4_notes.append(Note(4, pad_root, base_beat + beat_offset, base_beat + beat_offset + pad_duration, 0.15))
+                ch4_notes.append(Note(4, pad_root + 7, base_beat + beat_offset, base_beat + beat_offset + pad_duration, 0.1))
+
         song.channels[0].notes.extend(ch0_notes)
         song.channels[1].notes.extend(ch1_notes)
         song.channels[2].notes.extend(ch2_notes)
+        if len(song.channels) > 3:
+            song.channels[3].notes.extend(ch3_notes)
+        if len(song.channels) > 4:
+            song.channels[4].notes.extend(ch4_notes)
 
     return song
 
@@ -243,12 +501,15 @@ def compose_song(bars, seed):
 # Audio Render and Export
 # -----------------------------------------------------------------------------
 
-def render_channel_audio(channel, total_samples, samples_per_beat, sample_rate, fix_pitch):
+def render_channel_audio(channel, total_samples, samples_per_beat, sample_rate, fix_pitch, progress_dict=None):
     """
     Worker function to render a single channel's audio completely independent of others.
+    Updates progress_dict with current progress if provided.
     """
     channel_data = [0.0] * total_samples
-    for note in channel.notes:
+    total_notes = len(channel.notes)
+    
+    for idx, note in enumerate(channel.notes):
         start_sample = int(note.start * samples_per_beat)
         end_sample = int(note.end * samples_per_beat)
         
@@ -259,8 +520,12 @@ def render_channel_audio(channel, total_samples, samples_per_beat, sample_rate, 
         for t in range(start_sample, end_sample):
             val = channel.instrument.generator(t, note.key, start_sample, end_sample, sample_rate, fix_pitch)
             channel_data[t] += val * note.vol
+        
+        # Update progress in shared dict
+        if progress_dict is not None:
+            progress_dict[channel.id] = (channel.instrument.name, idx + 1, total_notes)
             
-    return channel_data
+    return (channel.id, channel.instrument.name, channel_data)
 
 def generate_audio(song, sample_rate, bpm, fix_pitch, use_threads):
     """
@@ -274,30 +539,99 @@ def generate_audio(song, sample_rate, bpm, fix_pitch, use_threads):
     
     if use_threads:
         print(f"Synthesizing {total_notes} notes across {len(song.channels)} channels (Parallel Generation Enabled)...")
-        # ProcessPoolExecutor yields true multi-core parallel processing in Python
+        
+        # Create a Manager dict for real-time progress tracking
+        manager = multiprocessing.Manager()
+        progress_dict = manager.dict()
+        
+        # Track channel info
+        channel_info = {}
+        for channel in song.channels:
+            channel_info[channel.id] = {
+                'name': channel.instrument.name,
+                'total': len(channel.notes),
+                'complete': False
+            }
+        
+        # Print initial progress bars
+        for ch_id in sorted(channel_info.keys()):
+            info = channel_info[ch_id]
+            print(f"  [{info['name']:>10}] |{'░' * 20}|     0/{info['total']} (  0.0%)")
+        
+        # Use ProcessPoolExecutor with progress monitoring
         with concurrent.futures.ProcessPoolExecutor(max_workers=len(song.channels)) as executor:
-            futures = [
-                executor.submit(
-                    render_channel_audio, 
-                    channel, total_samples, samples_per_beat, sample_rate, fix_pitch
-                ) for channel in song.channels
-            ]
+            futures = {
+                executor.submit(render_channel_audio, channel, total_samples, samples_per_beat, sample_rate, fix_pitch, progress_dict): channel.id
+                for channel in song.channels
+            }
             
             completed = 0
-            for future in concurrent.futures.as_completed(futures):
-                ch_data = future.result()
-                # Merge the parallelly generated channel into the master track
-                for t in range(total_samples):
-                    audio_data[t] += ch_data[t]
+            total_channels = len(futures)
+            last_progress = {}
+            
+            while completed < total_channels:
+                # Check for completed futures
+                done, _ = concurrent.futures.wait(futures, timeout=0.05, return_when=concurrent.futures.FIRST_COMPLETED)
                 
-                completed += 1
-                sys.stdout.write(f'\rRendered channel {completed}/{len(song.channels)}')
-                sys.stdout.flush()
+                for future in list(done):
+                    if future.done():
+                        ch_id = futures[future]
+                        _, _, ch_data = future.result()
+                        
+                        # Merge the channel data into master track
+                        for t in range(total_samples):
+                            audio_data[t] += ch_data[t]
+                        
+                        # Mark channel as complete
+                        channel_info[ch_id]['complete'] = True
+                        completed += 1
+                        futures.pop(future, None)
+                
+                # Build progress display
+                progress_lines = []
+                display_changed = False
+                
+                for ch_id in sorted(channel_info.keys()):
+                    info = channel_info[ch_id]
+                    if info['complete']:
+                        bar = '█' * 20
+                        line = f"  ✓ [{info['name']:>10}] |{bar}| {info['total']}/{info['total']} (100.0%)"
+                    elif ch_id in progress_dict:
+                        name, current, total = progress_dict[ch_id]
+                        pct = (current / total * 100) if total > 0 else 0
+                        bar_len = 20
+                        filled = int(bar_len * current / total) if total > 0 else 0
+                        bar = '█' * filled + '░' * (bar_len - filled)
+                        line = f"    [{name:>10}] |{bar}| {current:>5}/{total} ({pct:5.1f}%)"
+                        
+                        # Check if progress changed
+                        key = (ch_id, current)
+                        if key != last_progress.get(ch_id):
+                            display_changed = True
+                            last_progress[ch_id] = key
+                    else:
+                        line = f"    [{info['name']:>10}] |{'░' * 20}|     0/{info['total']} (  0.0%)"
+                    progress_lines.append(line)
+                
+                # Update display if progress changed
+                if display_changed:
+                    # Move cursor up and redraw
+                    sys.stdout.write(f'\033[{len(progress_lines)}A')
+                    for line in progress_lines:
+                        # FIX: Write the line, clear to end of line (\033[K), and unconditionally add a newline
+                        sys.stdout.write(f'\r\033[K{line}\n')
+                    sys.stdout.flush()
+            
+            print()  # New line after all complete
     else:
-        # Sequential Generation
-        processed_notes = 0
+        # Sequential Generation with per-channel progress
+        print(f"Synthesizing {total_notes} notes across {len(song.channels)} channels (Sequential Generation)...")
+        
         for channel in song.channels:
-            for note in channel.notes:
+            ch_total = len(channel.notes)
+            print(f"\n  Processing channel: {channel.instrument.name} ({ch_total} notes)")
+            
+            for note_idx, note in enumerate(channel.notes):
                 start_sample = int(note.start * samples_per_beat)
                 end_sample = int(note.end * samples_per_beat)
                 start_sample = max(0, start_sample)
@@ -307,9 +641,15 @@ def generate_audio(song, sample_rate, bpm, fix_pitch, use_threads):
                     val = channel.instrument.generator(t, note.key, start_sample, end_sample, sample_rate, fix_pitch)
                     audio_data[t] += val * note.vol
                 
-                processed_notes += 1
-                sys.stdout.write(f'\rRendering audio... [{processed_notes}/{total_notes} notes synthesized]')
+                # Show per-note progress for this channel
+                pct = (note_idx + 1) / ch_total * 100
+                bar_len = 30
+                filled = int(bar_len * (note_idx + 1) / ch_total)
+                bar = '█' * filled + '░' * (bar_len - filled)
+                sys.stdout.write(f'\r    Progress: |{bar}| {note_idx + 1}/{ch_total} ({pct:5.1f}%)')
                 sys.stdout.flush()
+            
+            print()  # New line after channel complete
             
     print("\nApplying master volume limits...")
 
@@ -354,6 +694,9 @@ if __name__ == '__main__':
     parser.add_argument('--output', type=str, default='output.wav', help='Output base filename.')
     parser.add_argument('--fix-pitch', action='store_true', help='Fix the quirky JS pitch calculations to use true chromatic frequencies.')
     parser.add_argument('--multithread', action='store_true', help='Enable parallel processing for much faster generation.')
+    parser.add_argument('--style', type=str, default='classic',
+                        choices=list(STYLE_PRESETS.keys()),
+                        help='Music style preset (classic, retro, ambient, techno, orchestral, experimental).')
 
     args = parser.parse_args()
 
@@ -367,11 +710,12 @@ if __name__ == '__main__':
     print(f"--- Algorithm Music Generator ---")
     print(f"Length:    {args.length} bars")
     print(f"Tempo:     {args.bpm} BPM")
+    print(f"Style:     {args.style}")
     print(f"Seed:      {actual_seed}")
     print(f"Output to: {final_output}")
 
     # 1. Generate Song layout
-    my_song = compose_song(args.length, actual_seed)
+    my_song = compose_song(args.length, actual_seed, style=args.style)
     
     # 2. Render to float audio track
     audio_track = generate_audio(my_song, args.sample_rate, args.bpm, args.fix_pitch, args.multithread)
