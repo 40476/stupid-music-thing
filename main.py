@@ -32,7 +32,7 @@ def get_freq(key):
 
 def piano_gen(t, key, s, e, sample_rate, fix_pitch):
     """
-    The "Piano" instrument (acts more like a sawtooth wave).
+    The "Piano" instrument (soft, plucky sound with a sawtooth envelope based on pitch).
     """
     freq = get_freq(key)
     
@@ -46,7 +46,7 @@ def piano_gen(t, key, s, e, sample_rate, fix_pitch):
 
 def sinwave_gen(t, key, s, e, sample_rate, fix_pitch):
     """
-    The "SinWave" instrument (sounds somewhat like marimba or strings).
+    The "SinWave" instrument (soft sine wave, good for melodies and pads).
     """
     if fix_pitch:
         freq = get_freq(key)
@@ -66,7 +66,7 @@ def sinwave_gen(t, key, s, e, sample_rate, fix_pitch):
 
 def noise_gen(t, key, s, e, sample_rate, fix_pitch):
     """
-    The "Noise" instrument (used for drums/percussion).
+    The "Noise" instrument (percussive, random noise with a sawtooth envelope based on pitch).
     """
     if fix_pitch:
         freq = get_freq(key)
@@ -108,7 +108,7 @@ def square_gen(t, key, s, e, sample_rate, fix_pitch):
 
 def triangle_gen(t, key, s, e, sample_rate, fix_pitch):
     """
-    The "Triangle" instrument (softer than square, good for bass or flute-like sounds).
+    The "Triangle" instrument (softer than square, with a more mellow tone).
     """
     if fix_pitch:
         freq = get_freq(key)
@@ -156,7 +156,7 @@ def organ_gen(t, key, s, e, sample_rate, fix_pitch):
 
 def bass_gen(t, key, s, e, sample_rate, fix_pitch):
     """
-    The "Bass" instrument (low frequency with punchy envelope).
+    The "Bass" instrument (deep, punchy sound with a sawtooth base and some harmonics).
     """
     if fix_pitch:
         freq = get_freq(key)
@@ -182,7 +182,7 @@ def bass_gen(t, key, s, e, sample_rate, fix_pitch):
 
 def pad_gen(t, key, s, e, sample_rate, fix_pitch):
     """
-    The "Pad" instrument (soft, atmospheric background sound).
+    The "Pad" instrument (soft, sustained sound with multiple detuned oscillators for a rich texture).
     """
     if fix_pitch:
         freq = get_freq(key)
