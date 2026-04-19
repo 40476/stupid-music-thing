@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
 """
-So um yea i got bored, made this, and had gemini add comments
+this islike 60% vibe coded because i was sleepy
+and wanted to go to bed sorry for the crummy reasoning lol
+So um yea i got bored, made this, and had gemini + a local llm fix stuff
 just enjoy it idk what to do with this thing
 """
 
