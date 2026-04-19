@@ -1,5 +1,5 @@
 ```
-usage: main.py [-h] [--length LENGTH] [--seed SEED] [--bpm BPM] [--sample-rate SAMPLE_RATE] [--output OUTPUT] [--fix-pitch] [--multithread]
+usage: main.py [-h] [--length LENGTH] [--seed SEED] [--bpm BPM] [--sample-rate SAMPLE_RATE] [--output OUTPUT] [--fix-pitch] [--multithread] [--style {retro,ambient,techno,orchestral,experimental,classic}]
 
 Algorithmic Song Generator
 
@@ -13,4 +13,6 @@ options:
   --output OUTPUT       Output base filename.
   --fix-pitch           Fix the quirky JS pitch calculations to use true chromatic frequencies.
   --multithread         Enable parallel processing for much faster generation.
+  --style {retro,ambient,techno,orchestral,experimental,classic}
+                        Music style preset (classic, retro, ambient, techno, orchestral, experimental).
 ```
